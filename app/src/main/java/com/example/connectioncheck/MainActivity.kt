@@ -535,6 +535,40 @@ class MainActivity : Activity() {
         return sb.toString().trimEnd() to sms.toString()
     }
 
+    /** VPN: (текст для экрана, короткий текст для SMS). */
+    @Suppress("DEPRECATION")
+    private fun collectVpn(): Pair<String, String> {
+        return try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val active = cm.activeNetwork
+            val vpns = cm.allNetworks.filter {
+                cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+            }
+            if (vpns.isEmpty()) {
+                "VPN: не обнаружен" to "VPN:off"
+            } else {
+                val sb = StringBuilder("VPN: ПОДКЛЮЧЕН")
+                val sms = StringBuilder("VPN:on")
+                for (n in vpns) {
+                    val iface = cm.getLinkProperties(n)?.interfaceName ?: "?"
+                    val validated = cm.getNetworkCapabilities(n)
+                        ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+                    val routed = n == active
+                    sb.append("\n  интерфейс $iface; интернет через VPN: ")
+                        .append(if (validated) "работает" else "не подтверждён")
+                        .append("; трафик приложения идёт через VPN: ")
+                        .append(if (routed) "да" else "нет")
+                    sms.append(" if=").append(iface)
+                        .append(" net=").append(if (validated) "ok" else "noinet")
+                        .append(" route=").append(if (routed) "yes" else "no")
+                }
+                sb.toString() to sms.toString()
+            }
+        } catch (e: Exception) {
+            "VPN: ошибка (${e.javaClass.simpleName})" to "VPN:n/a"
+        }
+    }
+
     private fun connectionType(): String {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return "нет подключения"
@@ -636,6 +670,7 @@ class MainActivity : Activity() {
         sb.appendLine("IMEI: $imeiText")
         sb.appendLine("Оператор: $operatorText")
         sb.appendLine("Активное подключение: ${connectionType()}")
+        sb.appendLine(collectVpn().first)
         sb.appendLine("SIM-карты:")
         sb.appendLine(simLines)
         sb.appendLine()
@@ -722,6 +757,7 @@ class MainActivity : Activity() {
         sb.append("CHK ").append(SimpleDateFormat("dd.MM HH:mm", Locale.US).format(Date())).append('\n')
         sb.append("IMEI:").append(imeiValue ?: "n/a").append('\n')
         sb.append(simSms).append('\n')
+        sb.append(collectVpn().second).append('\n')
 
         val sats = "${if (satsUsed < 0) "-" else satsUsed.toString()}/${if (satsVisible < 0) "-" else satsVisible.toString()}"
         val fix = bestFix()
