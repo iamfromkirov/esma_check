@@ -5,13 +5,10 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.AppOpsManager
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.location.GnssStatus
@@ -28,9 +25,9 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
-import android.telephony.SmsManager
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
+import android.view.Gravity
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -77,8 +74,8 @@ class MainActivity : Activity() {
     private val ui = Handler(Looper.getMainLooper())
 
     private lateinit var btnCheck: Button
-    private lateinit var btnSmsDirect: Button
     private lateinit var btnSmsApp: Button
+    private lateinit var btnHelp: TextView
     private lateinit var btnCopy: Button
     private lateinit var tvStatus: TextView
     private lateinit var tvReport: TextView
@@ -113,8 +110,8 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         btnCheck = findViewById(R.id.btnCheck)
-        btnSmsDirect = findViewById(R.id.btnSmsDirect)
         btnSmsApp = findViewById(R.id.btnSmsApp)
+        btnHelp = findViewById(R.id.btnHelp)
         btnCopy = findViewById(R.id.btnCopy)
         tvStatus = findViewById(R.id.tvStatus)
         tvReport = findViewById(R.id.tvReport)
@@ -123,8 +120,8 @@ class MainActivity : Activity() {
         etPhone.setText(prefs.getString("phone", ""))
 
         btnCheck.setOnClickListener { runCheck() }
-        btnSmsDirect.setOnClickListener { confirmAndSendSms() }
         btnSmsApp.setOnClickListener { sendSmsViaApp() }
+        btnHelp.setOnClickListener { showAbout() }
         btnCopy.setOnClickListener { copyReport() }
 
         val need = listOf(
@@ -158,13 +155,6 @@ class MainActivity : Activity() {
             REQ_INIT -> {
                 startLocation()
                 refreshStaticAsync()
-            }
-            REQ_SMS -> {
-                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    confirmAndSendSms()
-                } else {
-                    toast("Без разрешения SEND_SMS отправка невозможна. Используйте «SMS через приложение».")
-                }
             }
         }
     }
@@ -458,7 +448,7 @@ class MainActivity : Activity() {
             return NetResult(
                 t.label, false,
                 "НЕДОСТУПЕН — TCP-соединение не установлено ($why)",
-                "FAIL tcp ${e.javaClass.simpleName}"
+                "TCP fail"
             )
         }
         val tcpMs = SystemClock.elapsedRealtime() - t0
@@ -470,14 +460,14 @@ class MainActivity : Activity() {
             conn.connectTimeout = 5000
             conn.readTimeout = 6000
             conn.requestMethod = "GET"
-            conn.instanceFollowRedirects = true
+            conn.instanceFollowRedirects = false
             conn.setRequestProperty("User-Agent", "ConnectionCheck/1.0")
             val code = conn.responseCode // любой HTTP-ответ = сервер доступен
             val ms = SystemClock.elapsedRealtime() - t1
             NetResult(
                 t.label, true,
                 "ДОСТУПЕН — HTTP $code, TCP $tcpMs мс, ответ $ms мс",
-                "OK $code ${ms}ms"
+                "TCP ok, HTTP ok"
             )
         } catch (e: Exception) {
             val why = e.javaClass.simpleName + (e.message?.let { ": " + it.take(50) } ?: "")
@@ -508,7 +498,8 @@ class MainActivity : Activity() {
             sb.appendLine("Подключено к: $shown")
             sb.appendLine("  BSSID: ${ci.bssid ?: "?"}")
             sb.appendLine("  Сигнал ${ci.rssi} dBm, ${ci.linkSpeed} Мбит/с, ${ci.frequency} МГц")
-            sms.append("conn ").append(shown).append(' ').append(ci.rssi).append("dBm")
+            val smsName = if (ssid.isEmpty() || ssid == "<unknown ssid>") "hidden" else ssid
+            sms.append("conn ").append(smsName).append(' ').append(ci.rssi).append("dBm")
         } else {
             sb.appendLine("Подключено к: нет")
             sms.append("not conn")
@@ -522,15 +513,12 @@ class MainActivity : Activity() {
 
         if (results.isEmpty()) {
             sb.appendLine("Найденные сети: нет данных (включите геолокацию; Android ограничивает частоту сканирования)")
-            sms.append("; scan empty")
         } else {
             sb.appendLine("Найденные сети (${results.size}):")
             results.take(15).forEachIndexed { i, r ->
                 val name = r.SSID.ifEmpty { "<скрытая>" }
                 sb.appendLine("  ${i + 1}. $name  ${r.level} dBm  ${r.frequency} МГц  ${r.BSSID}")
             }
-            sms.append("; n=").append(results.size).append("; top: ")
-            sms.append(results.take(3).joinToString(", ") { "${it.SSID.ifEmpty { "hidden" }} ${it.level}" })
         }
         return sb.toString().trimEnd() to sms.toString()
     }
@@ -560,7 +548,7 @@ class MainActivity : Activity() {
                         .append(if (routed) "да" else "нет")
                     sms.append(" if=").append(iface)
                         .append(" net=").append(if (validated) "ok" else "noinet")
-                        .append(" route=").append(if (routed) "yes" else "no")
+                        .append(" traffic=").append(if (routed) "yes" else "no")
                 }
                 sb.toString() to sms.toString()
             }
@@ -620,7 +608,7 @@ class MainActivity : Activity() {
                     lastCheckTime = nowText()
                     checking = false
                     btnCheck.isEnabled = true
-                    tvStatus.text = "Готово: $lastCheckTime"
+                    tvStatus.text = "Последняя проверка: $lastCheckTime"
                     render()
                 }
             } catch (e: Exception) {
@@ -808,76 +796,12 @@ class MainActivity : Activity() {
         return number
     }
 
-    private fun confirmAndSendSms() {
-        val number = phoneOrNull() ?: return
-        if (lastCheckTime.isEmpty()) {
-            toast("Сначала нажмите «Проверить»")
-            return
-        }
-        val text = buildSmsText()
-        AlertDialog.Builder(this)
-            .setTitle("Отправить SMS на $number?")
-            .setMessage(text)
-            .setPositiveButton("Отправить") { _, _ -> sendSmsDirect(number, text) }
-            .setNegativeButton("Отмена", null)
-            .show()
-    }
-
-    @Suppress("DEPRECATION")
-    private fun smsManager(): SmsManager =
-        if (Build.VERSION.SDK_INT >= 31) getSystemService(SmsManager::class.java) else SmsManager.getDefault()
-
-    private fun sendSmsDirect(number: String, text: String) {
-        if (checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.SEND_SMS), REQ_SMS)
-            return
-        }
-        try {
-            val sm = smsManager()
-            val parts = sm.divideMessage(text)
-            val action = "$packageName.SMS_SENT"
-            var remaining = parts.size
-            var failed = 0
-
-            val receiver = object : BroadcastReceiver() {
-                override fun onReceive(c: Context, i: Intent) {
-                    if (resultCode != RESULT_OK) failed++
-                    remaining--
-                    if (remaining <= 0) {
-                        try {
-                            unregisterReceiver(this)
-                        } catch (_: Exception) {
-                        }
-                        toast(
-                            if (failed == 0) "SMS отправлено (${parts.size} шт.)"
-                            else "Ошибка отправки SMS (неудачных частей: $failed)"
-                        )
-                    }
-                }
-            }
-            val filter = IntentFilter(action)
-            if (Build.VERSION.SDK_INT >= 33) {
-                registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                registerReceiver(receiver, filter)
-            }
-
-            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            val sentIntents = ArrayList<PendingIntent>()
-            for (idx in parts.indices) {
-                sentIntents.add(
-                    PendingIntent.getBroadcast(this, idx, Intent(action).setPackage(packageName), flags)
-                )
-            }
-            sm.sendMultipartTextMessage(number, null, parts, sentIntents, null)
-            toast("Отправка SMS…")
-        } catch (e: Exception) {
-            toast("Не удалось отправить: ${e.javaClass.simpleName}")
-        }
-    }
-
     private fun sendSmsViaApp() {
         val number = phoneOrNull() ?: return
+        if (lastCheckTime.isEmpty()) {
+            toast("Сначала нажмите «ПРОВЕРИТЬ»")
+            return
+        }
         val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(number)))
             .putExtra("sms_body", buildSmsText())
         try {
@@ -885,6 +809,20 @@ class MainActivity : Activity() {
         } catch (_: Exception) {
             toast("Приложение для SMS не найдено")
         }
+    }
+
+    private fun showAbout() {
+        val d = resources.displayMetrics.density
+        val tv = TextView(this).apply {
+            text = "Проверка подключения МРМ\nКиров, РЦС-3\nЗырянов Дмитрий"
+            gravity = Gravity.CENTER
+            textSize = 17f
+            setPadding((24 * d).toInt(), (28 * d).toInt(), (24 * d).toInt(), (12 * d).toInt())
+        }
+        AlertDialog.Builder(this)
+            .setView(tv)
+            .setPositiveButton("Ok", null)
+            .show()
     }
 
     private fun copyReport() {
@@ -897,6 +835,5 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQ_INIT = 1
-        private const val REQ_SMS = 2
     }
 }

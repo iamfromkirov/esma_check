@@ -1,70 +1,97 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:orientation="vertical">
 
+    <!-- Шапка: название и кнопка-кружок со знаком вопроса -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="12dp">
-
-        <Button
-            android:id="@+id/btnCheck"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Проверить" />
+        android:layout_height="56dp"
+        android:background="#1565C0"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="14dp">
 
         <TextView
-            android:id="@+id/tvStatus"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp"
-            android:text="Нажмите «Проверить»"
-            android:textSize="13sp" />
+            android:layout_weight="1"
+            android:text="@string/app_name"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold" />
 
-        <EditText
-            android:id="@+id/etPhone"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Номер для отправки отчёта (+7...)"
-            android:importantForAutofill="no"
-            android:inputType="phone" />
+        <TextView
+            android:id="@+id/btnHelp"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:background="@drawable/help_circle"
+            android:clickable="true"
+            android:contentDescription="О программе"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="?"
+            android:textColor="#FFFFFF"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:orientation="vertical"
+            android:padding="12dp">
 
             <Button
-                android:id="@+id/btnSmsDirect"
-                android:layout_width="0dp"
+                android:id="@+id/btnCheck"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="SMS отчёт" />
+                android:text="ПРОВЕРИТЬ" />
+
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="4dp"
+                android:paddingBottom="8dp"
+                android:text="Последняя проверка: не проводилась"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/tvReport"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="12dp"
+                android:textSize="12sp"
+                android:typeface="monospace" />
+
+            <Button
+                android:id="@+id/btnCopy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="СКОПИРОВАТЬ ПОЛНЫЙ ОТЧЁТ" />
+
+            <EditText
+                android:id="@+id/etPhone"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Номер для отправки отчёта (+7...)"
+                android:importantForAutofill="no"
+                android:inputType="phone" />
 
             <Button
                 android:id="@+id/btnSmsApp"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="SMS через приложение" />
+                android:text="ОТЧЁТ ЧЕРЕЗ СМС" />
         </LinearLayout>
-
-        <Button
-            android:id="@+id/btnCopy"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Копировать полный отчёт" />
-
-        <TextView
-            android:id="@+id/tvReport"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingTop="8dp"
-            android:textSize="12sp"
-            android:typeface="monospace" />
-    </LinearLayout>
-</ScrollView>
+    </ScrollView>
+</LinearLayout>
