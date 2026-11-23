@@ -23,7 +23,13 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.graphics.Color
+import android.graphics.Typeface
 import android.os.SystemClock
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.provider.Settings
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
@@ -780,8 +786,56 @@ class MainActivity : Activity() {
         return sb.toString().trim().map { if (it.code in 32..126 || it == '\n') it else '?' }.joinToString("")
     }
 
+    // ───────────── Оформление отчёта на экране ─────────────
+    // Копирование и SMS используют обычный текст из buildReport(), цвета только для экрана.
+
+    private val redPhrases = listOf(
+        "Network (Wi-Fi / вышки сотовой связи)",
+        "Fused (комбинированный, Google)",
+        "ВЫКЛЮЧЕН в настройках",
+        "нет данных (выйдите на открытое место)",
+        "НЕДОСТУПЕН"
+    )
+
+    private fun styleReport(text: String): CharSequence {
+        val blue = Color.parseColor("#1565C0")
+        val red = Color.parseColor("#D32F2F")
+        val sb = SpannableStringBuilder(text)
+        val flag = Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        val listLine = Regex("^\\s*\\d+\\.")
+
+        var pos = 0
+        for (line in text.split("\n")) {
+            val end = pos + line.length
+            if (line.startsWith("── ")) {
+                // название раздела: синий жирный
+                sb.setSpan(StyleSpan(Typeface.BOLD), pos, end, flag)
+                sb.setSpan(ForegroundColorSpan(blue), pos, end, flag)
+            } else if (!listLine.containsMatchIn(line)) {
+                // название параметра до двоеточия: чёрный жирный
+                var idx = line.indexOf(": ")
+                if (idx < 0 && line.endsWith(":")) idx = line.length - 1
+                if (idx > 0 && !line.substring(0, idx).contains(';')) {
+                    sb.setSpan(StyleSpan(Typeface.BOLD), pos, pos + idx + 1, flag)
+                    sb.setSpan(ForegroundColorSpan(Color.BLACK), pos, pos + idx + 1, flag)
+                }
+            }
+            pos = end + 1
+        }
+
+        // отдельные сообщения: красный, не жирный
+        for (phrase in redPhrases) {
+            var i = text.indexOf(phrase)
+            while (i >= 0) {
+                sb.setSpan(ForegroundColorSpan(red), i, i + phrase.length, flag)
+                i = text.indexOf(phrase, i + phrase.length)
+            }
+        }
+        return sb
+    }
+
     private fun render() {
-        tvReport.text = buildReport()
+        tvReport.text = styleReport(buildReport())
     }
 
     // ───────────── SMS ─────────────
