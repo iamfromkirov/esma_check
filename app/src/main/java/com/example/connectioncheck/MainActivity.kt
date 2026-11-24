@@ -34,8 +34,10 @@ import android.provider.Settings
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import android.view.Gravity
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.net.HttpURLConnection
@@ -67,6 +69,15 @@ class MainActivity : Activity() {
         val candidateApps: List<String> // установленные приложения с правом ACCESS_MOCK_LOCATION
     )
 
+    private data class SatInfo(
+        val sys: String,      // GPS, GLO, GAL, BDS, ...
+        val svid: Int,
+        val cn0: Float,       // SNR, дБ-Гц
+        val elev: Float,      // угол места, градусы
+        val eph: Boolean?,    // есть эфемериды (null - Android < 8.0 не сообщает)
+        val used: Boolean     // участвует в решении
+    )
+
     // ───────────── Что проверяем ─────────────
 
     private val targets = listOf(
@@ -82,6 +93,10 @@ class MainActivity : Activity() {
     private lateinit var btnCheck: Button
     private lateinit var btnSmsApp: Button
     private lateinit var btnHelp: TextView
+    private lateinit var tvReport2: TextView
+    private lateinit var tvSatHeader: TextView
+    private lateinit var hsvSats: HorizontalScrollView
+    private lateinit var tvSats: TextView
     private lateinit var btnCopy: Button
     private lateinit var tvStatus: TextView
     private lateinit var tvReport: TextView
@@ -89,6 +104,8 @@ class MainActivity : Activity() {
 
     private val fixes = linkedMapOf<String, Location>()
     private var satsVisible = -1
+    private var sats: List<SatInfo> = emptyList()
+    private var satExpanded = false
     private var satsUsed = -1
     private var satsByConstellation = ""
     private var ttffMs = -1
@@ -121,6 +138,10 @@ class MainActivity : Activity() {
         btnCopy = findViewById(R.id.btnCopy)
         tvStatus = findViewById(R.id.tvStatus)
         tvReport = findViewById(R.id.tvReport)
+        tvReport2 = findViewById(R.id.tvReport2)
+        tvSatHeader = findViewById(R.id.tvSatHeader)
+        hsvSats = findViewById(R.id.hsvSats)
+        tvSats = findViewById(R.id.tvSats)
         etPhone = findViewById(R.id.etPhone)
 
         etPhone.setText(prefs.getString("phone", ""))
@@ -128,6 +149,10 @@ class MainActivity : Activity() {
         btnCheck.setOnClickListener { runCheck() }
         btnSmsApp.setOnClickListener { sendSmsViaApp() }
         btnHelp.setOnClickListener { showAbout() }
+        tvSatHeader.setOnClickListener {
+            satExpanded = !satExpanded
+            render()
+        }
         btnCopy.setOnClickListener { copyReport() }
 
         val need = listOf(
@@ -208,6 +233,18 @@ class MainActivity : Activity() {
                     perConst[name] = (perConst[name] ?: 0) + 1
                 }
             }
+            val list = ArrayList<SatInfo>(status.satelliteCount)
+            for (i in 0 until status.satelliteCount) {
+                list += SatInfo(
+                    sysTag(status.getConstellationType(i)),
+                    status.getSvid(i),
+                    status.getCn0DbHz(i),
+                    status.getElevationDegrees(i),
+                    if (Build.VERSION.SDK_INT >= 26) status.hasEphemerisData(i) else null,
+                    status.usedInFix(i)
+                )
+            }
+            sats = list.sortedWith(compareBy({ it.sys }, { it.svid }))
             satsVisible = status.satelliteCount
             satsUsed = used
             satsByConstellation = perConst.entries.joinToString(", ") { "${it.key} ${it.value}" }
@@ -652,7 +689,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun buildReport(): String {
+    private fun buildReport(forScreen: Boolean = false): String {
         val sb = StringBuilder()
         val lm = getSystemService(LOCATION_SERVICE) as LocationManager
 
@@ -683,6 +720,13 @@ class MainActivity : Activity() {
             sb.append("Спутники: в поле зрения $satsVisible, в решении $satsUsed")
             if (satsByConstellation.isNotEmpty()) sb.append(" ($satsByConstellation)")
             sb.appendLine()
+        }
+        if (forScreen) {
+            // на экране статистика - раскрывающийся блок, место вставки помечаем
+            sb.appendLine(SAT_MARK)
+        } else if (sats.isNotEmpty()) {
+            sb.appendLine("Статистика SAT:")
+            for (sat in sats) sb.append("  ").appendLine(satLine(sat))
         }
         if (ttffMs >= 0) sb.appendLine("Время до первого fix: ${ttffMs / 1000.0} с")
 
@@ -834,8 +878,82 @@ class MainActivity : Activity() {
         return sb
     }
 
+    // ───────────── Статистика спутников ─────────────
+
+    private fun sysTag(type: Int): String = when (type) {
+        GnssStatus.CONSTELLATION_GPS -> "GPS"
+        GnssStatus.CONSTELLATION_GLONASS -> "GLO"
+        GnssStatus.CONSTELLATION_GALILEO -> "GAL"
+        GnssStatus.CONSTELLATION_BEIDOU -> "BDS"
+        GnssStatus.CONSTELLATION_QZSS -> "QZS"
+        GnssStatus.CONSTELLATION_SBAS -> "SBA"
+        GnssStatus.CONSTELLATION_IRNSS -> "IRN"
+        else -> "UNK"
+    }
+
+    private fun ephText(e: Boolean?): String = when (e) {
+        true -> "YES"
+        false -> "NO"
+        null -> "N/A"
+    }
+
+    /** Одна строка без оформления (для копирования отчёта). */
+    private fun satLine(x: SatInfo): String = String.format(
+        Locale.US, "[%s] SVID:%d SNR:%.1f dBHz  Elev:%d°  Eph:%s  Use:%s",
+        x.sys, x.svid, x.cn0, Math.round(x.elev), ephText(x.eph), if (x.used) "YES" else "NO"
+    )
+
+    /** Строки статистики с цветами: SNR, угол места, Eph, Use. */
+    private fun styleSats(): CharSequence {
+        if (sats.isEmpty()) return "нет данных от спутников"
+        val green = Color.parseColor("#2E7D32")
+        val yellow = Color.parseColor("#F9A825")
+        val red = Color.parseColor("#D32F2F")
+        val sb = SpannableStringBuilder()
+
+        fun add(text: String, color: Int? = null) {
+            val start = sb.length
+            sb.append(text)
+            if (color != null) {
+                sb.setSpan(ForegroundColorSpan(color), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+
+        for ((n, x) in sats.withIndex()) {
+            if (n > 0) sb.append('\n')
+            add("[${x.sys}] SVID:${x.svid} SNR:")
+            add(
+                String.format(Locale.US, "%.1f dBHz", x.cn0),
+                when {
+                    x.cn0 < 20f -> red
+                    x.cn0 <= 30f -> yellow
+                    else -> green
+                }
+            )
+            add("  Elev:")
+            add("${Math.round(x.elev)}°", if (x.elev <= 15f) red else green)
+            add("  Eph:")
+            add(ephText(x.eph), when (x.eph) {
+                true -> green
+                false -> red
+                null -> null
+            })
+            add("  Use:")
+            add(if (x.used) "YES" else "NO", if (x.used) green else red)
+        }
+        return sb
+    }
+
     private fun render() {
-        tvReport.text = styleReport(buildReport())
+        val full = buildReport(forScreen = true)
+        val k = full.indexOf(SAT_MARK)
+        val top = if (k >= 0) full.substring(0, k) else full
+        val bottom = if (k >= 0) full.substring(k + SAT_MARK.length) else ""
+        tvReport.text = styleReport(top.trimEnd('\n'))
+        tvReport2.text = styleReport(bottom.trim('\n'))
+        tvSatHeader.text = if (satExpanded) "- Статистика SAT" else "+ Статистика SAT"
+        hsvSats.visibility = if (satExpanded) View.VISIBLE else View.GONE
+        if (satExpanded) tvSats.text = styleSats()
     }
 
     // ───────────── SMS ─────────────
@@ -889,5 +1007,6 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQ_INIT = 1
+        private const val SAT_MARK = "@@SAT@@"
     }
 }

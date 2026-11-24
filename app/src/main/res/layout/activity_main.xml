@@ -65,8 +65,50 @@
                 android:text="Последняя проверка: не проводилась"
                 android:textSize="14sp" />
 
+            <!-- Отчёт до строки «Спутники» -->
             <TextView
                 android:id="@+id/tvReport"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:typeface="monospace" />
+
+            <!-- Раскрывающаяся статистика спутников -->
+            <TextView
+                android:id="@+id/tvSatHeader"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"
+                android:text="+ Статистика SAT"
+                android:textColor="#1565C0"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:typeface="monospace" />
+
+            <!-- Горизонтальная прокрутка: строка спутника не переносится -->
+            <HorizontalScrollView
+                android:id="@+id/hsvSats"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="8dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/tvSats"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:textSize="11sp"
+                    android:typeface="monospace" />
+            </HorizontalScrollView>
+
+            <!-- Остальной отчёт -->
+            <TextView
+                android:id="@+id/tvReport2"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:paddingBottom="12dp"
